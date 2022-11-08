@@ -1,0 +1,408 @@
+{
+    "version": "Notebook/1.0",
+    "items": [
+      {
+        "type": 1,
+        "content": {
+          "json": "# Conditional Access Workbook"
+        },
+        "name": "text - 0"
+      },
+      {
+        "type": 9,
+        "content": {
+          "version": "KqlParameterItem/1.0",
+          "parameters": [
+            {
+              "id": "3e4ec547-2296-4229-a49e-337810b16f2f",
+              "version": "KqlParameterItem/1.0",
+              "name": "timeRange",
+              "type": 4,
+              "isGlobal": true,
+              "value": {
+                "durationMs": 86400000
+              },
+              "typeSettings": {
+                "selectableValues": [
+                  {
+                    "durationMs": 1800000
+                  },
+                  {
+                    "durationMs": 3600000
+                  },
+                  {
+                    "durationMs": 43200000
+                  },
+                  {
+                    "durationMs": 86400000
+                  },
+                  {
+                    "durationMs": 172800000
+                  },
+                  {
+                    "durationMs": 259200000
+                  },
+                  {
+                    "durationMs": 604800000
+                  },
+                  {
+                    "durationMs": 1209600000
+                  },
+                  {
+                    "durationMs": 2419200000
+                  },
+                  {
+                    "durationMs": 2592000000
+                  }
+                ],
+                "allowCustom": true
+              },
+              "timeContext": {
+                "durationMs": 86400000
+              }
+            }
+          ],
+          "style": "pills",
+          "queryType": 0,
+          "resourceType": "microsoft.operationalinsights/workspaces"
+        },
+        "name": "parameters - 2"
+      },
+      {
+        "type": 12,
+        "content": {
+          "version": "NotebookGroup/1.0",
+          "groupType": "editable",
+          "items": [
+            {
+              "type": 1,
+              "content": {
+                "json": "## Signin logs"
+              },
+              "name": "text - 1"
+            },
+            {
+              "type": 9,
+              "content": {
+                "version": "KqlParameterItem/1.0",
+                "parameters": [
+                  {
+                    "id": "a02b6737-395f-4e12-9c7b-9512c0d0ae98",
+                    "version": "KqlParameterItem/1.0",
+                    "name": "PolicyStatus",
+                    "label": "Policy Status",
+                    "type": 10,
+                    "isRequired": true,
+                    "value": "All",
+                    "typeSettings": {
+                      "additionalResourceOptions": [],
+                      "showDefault": false
+                    },
+                    "jsonData": "[\"All\", \"Active\", \"Report Only\"]",
+                    "timeContext": {
+                      "durationMs": 86400000
+                    }
+                  }
+                ],
+                "style": "above",
+                "queryType": 0,
+                "resourceType": "microsoft.operationalinsights/workspaces"
+              },
+              "name": "parameters - 3"
+            },
+            {
+              "type": 9,
+              "content": {
+                "version": "KqlParameterItem/1.0",
+                "parameters": [
+                  {
+                    "id": "518671d1-9289-4fe0-9615-99a96f795fe2",
+                    "version": "KqlParameterItem/1.0",
+                    "name": "UPN",
+                    "type": 1,
+                    "description": "User principal name",
+                    "value": "",
+                    "timeContext": {
+                      "durationMs": 604800000
+                    }
+                  },
+                  {
+                    "id": "f9f06ea3-e8db-414c-b2d7-76137e3cf0a1",
+                    "version": "KqlParameterItem/1.0",
+                    "name": "CAPolicyResult",
+                    "type": 2,
+                    "value": null,
+                    "typeSettings": {
+                      "additionalResourceOptions": [],
+                      "showDefault": false
+                    },
+                    "jsonData": "[\"notApplied\", \"success\", \"failure\", \"interrupted\"]",
+                    "timeContext": {
+                      "durationMs": 604800000
+                    }
+                  },
+                  {
+                    "id": "4225cdc9-5fc7-4c74-b673-1f1a111833a9",
+                    "version": "KqlParameterItem/1.0",
+                    "name": "CorrelationID",
+                    "label": "Correlation ID",
+                    "type": 1,
+                    "description": "Filter by correlation ID value",
+                    "value": "",
+                    "timeContext": {
+                      "durationMs": 86400000
+                    }
+                  },
+                  {
+                    "id": "7a90342a-056e-4a02-8ed8-873b228070ab",
+                    "version": "KqlParameterItem/1.0",
+                    "name": "CAPolicyName",
+                    "type": 2,
+                    "multiSelect": true,
+                    "quote": "'",
+                    "delimiter": ",",
+                    "query": "SigninLogs\r\n| where ResultType in (0,53000,53001,53002,53003,53004)\r\n| mv-expand ConditionalAccessPolicies\r\n| summarize by tostring(ConditionalAccessPolicies.displayName)",
+                    "value": [
+                      "value::all"
+                    ],
+                    "typeSettings": {
+                      "additionalResourceOptions": [
+                        "value::all"
+                      ],
+                      "showDefault": false
+                    },
+                    "timeContext": {
+                      "durationMs": 0
+                    },
+                    "timeContextFromParameter": "timeRange",
+                    "defaultValue": "value::all",
+                    "queryType": 0,
+                    "resourceType": "microsoft.operationalinsights/workspaces"
+                  }
+                ],
+                "style": "pills",
+                "queryType": 0,
+                "resourceType": "microsoft.operationalinsights/workspaces"
+              },
+              "name": "parameters - 2"
+            },
+            {
+              "type": 3,
+              "content": {
+                "version": "KqlItem/1.0",
+                "query": "SigninLogs\r\n| where ResultType in (0,53000,53001,53002,53003,53004)\r\n| where UserPrincipalName contains '{UPN}'\r\n| mv-expand ConditionalAccessPolicies\r\n| where CorrelationId contains '{CorrelationID}'\r\n| extend PolicyStatus = '{PolicyStatus}'\r\n| extend CAPolicyResult = '{CAPolicyResult}'\r\n| extend CAResult = tostring(ConditionalAccessPolicies.result)\r\n| extend CAID = tostring(ConditionalAccessPolicies.id)\r\n| extend CAPolicyName = tostring(ConditionalAccessPolicies.displayName)\r\n| extend DeviceOS = DeviceDetail.operatingSystem\r\n| extend DeviceBrowser = DeviceDetail.browser\r\n| where CAPolicyName in ({CAPolicyName})\r\n| where case(PolicyStatus == 'Active', CAResult !contains 'reportOnly', PolicyStatus == 'Report Only', CAResult startswith 'reportOnly', CAResult contains '')\r\n| where case(CAPolicyResult == 'success', CAResult contains 'success', CAPolicyResult == 'failure', CAResult contains 'failure', CAPolicyResult == 'notApplied', CAResult contains 'notApplied', CAPolicyResult == 'interrupted', CAResult contains 'interrupted', CAResult contains '')\r\n| project TimeGenerated, UserPrincipalName, CAPolicyName, CAResult, ResultDescription, CorrelationId, CAID, Id, RiskLevelDuringSignIn\r\n| summarize arg_max(TimeGenerated, *) by CorrelationId, CAResult, CAPolicyName\r\n| extend policyUrl = strcat(\"https://portal.azure.com/#view/Microsoft_AAD_IAM/PolicyBlade/policyId/\", CAID)\r\n| project CorrelationId, TimeGenerated, UserPrincipalName, CAPolicyName, CAResult, ResultDescription, policyUrl, Id, RiskLevelDuringSignIn",
+                "size": 0,
+                "showAnalytics": true,
+                "timeContextFromParameter": "timeRange",
+                "exportedParameters": [
+                  {
+                    "fieldName": "CorrelationId",
+                    "parameterName": "TargetCorrelationId"
+                  },
+                  {
+                    "fieldName": "Id",
+                    "parameterName": "LoginId",
+                    "parameterType": 1
+                  },
+                  {
+                    "fieldName": "RiskLevelDuringSignIn",
+                    "parameterName": "RiskLevelDuringSignIn",
+                    "parameterType": 1
+                  }
+                ],
+                "showExportToExcel": true,
+                "queryType": 0,
+                "resourceType": "microsoft.operationalinsights/workspaces",
+                "gridSettings": {
+                  "formatters": [
+                    {
+                      "columnMatch": "CAPolicyName",
+                      "formatter": 1,
+                      "formatOptions": {
+                        "linkColumn": "policyUrl",
+                        "linkTarget": "Url"
+                      }
+                    },
+                    {
+                      "columnMatch": "CAResult",
+                      "formatter": 18,
+                      "formatOptions": {
+                        "thresholdsOptions": "icons",
+                        "thresholdsGrid": [
+                          {
+                            "operator": "contains",
+                            "thresholdValue": "failure",
+                            "representation": "4",
+                            "text": "{0}{1}"
+                          },
+                          {
+                            "operator": "contains",
+                            "thresholdValue": "interrupted",
+                            "representation": "cancelled",
+                            "text": "{0}{1}"
+                          },
+                          {
+                            "operator": "contains",
+                            "thresholdValue": "NotApplied",
+                            "representation": "stopped",
+                            "text": "{0}{1}"
+                          },
+                          {
+                            "operator": "contains",
+                            "thresholdValue": "notApplied",
+                            "representation": "stopped",
+                            "text": "{0}{1}"
+                          },
+                          {
+                            "operator": "contains",
+                            "thresholdValue": "Success",
+                            "representation": "success",
+                            "text": "{0}{1}"
+                          },
+                          {
+                            "operator": "Default",
+                            "thresholdValue": null,
+                            "representation": "success",
+                            "text": "{0}{1}"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "columnMatch": "policyUrl",
+                      "formatter": 5
+                    }
+                  ],
+                  "sortBy": [
+                    {
+                      "itemKey": "TimeGenerated",
+                      "sortOrder": 2
+                    }
+                  ]
+                },
+                "sortBy": [
+                  {
+                    "itemKey": "TimeGenerated",
+                    "sortOrder": 2
+                  }
+                ]
+              },
+              "name": "query - 1"
+            },
+            {
+              "type": 3,
+              "content": {
+                "version": "KqlItem/1.0",
+                "query": "SigninLogs\r\n| where ResultType in (0,53000,53001,53002,53003,53004)\r\n| where CorrelationId == '{TargetCorrelationId}'\r\n| where Id == '{LoginId}'\r\n| extend authenticationMethod_ = tostring(parse_json(AuthenticationDetails)[0].authenticationMethod)\r\n| extend authenticationStepResultDetail = tostring(parse_json(AuthenticationDetails)[0].authenticationStepResultDetail)\r\n| project DeviceOS=tostring(DeviceDetail.operatingSystem), DeviceBrowser=tostring(DeviceDetail.browser), Location, IPAddress, AppDisplayName, AuthenticationRequirement, authenticationMethod_, authenticationStepResultDetail\r\n| distinct DeviceOS, DeviceBrowser, Location, IPAddress, AppDisplayName, AuthenticationRequirement, authenticationMethod_, authenticationStepResultDetail",
+                "size": 1,
+                "title": "Signin Properties",
+                "timeContextFromParameter": "timeRange",
+                "queryType": 0,
+                "resourceType": "microsoft.operationalinsights/workspaces",
+                "visualization": "table",
+                "gridSettings": {
+                  "formatters": [
+                    {
+                      "columnMatch": "CAResult",
+                      "formatter": 18,
+                      "formatOptions": {
+                        "thresholdsOptions": "colors",
+                        "thresholdsGrid": [
+                          {
+                            "operator": "==",
+                            "thresholdValue": "failure",
+                            "representation": "redBright",
+                            "text": "{0}{1}"
+                          },
+                          {
+                            "operator": "Default",
+                            "thresholdValue": null,
+                            "text": "{0}{1}"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "sortBy": []
+              },
+              "conditionalVisibility": {
+                "parameterName": "TargetCorrelationId",
+                "comparison": "isNotEqualTo"
+              },
+              "name": "query - 4"
+            },
+            {
+              "type": 3,
+              "content": {
+                "version": "KqlItem/1.0",
+                "query": "SigninLogs\r\n| where ResultType in (0,53000,53001,53002,53003,53004)\r\n| where CorrelationId == '{TargetCorrelationId}'\r\n| where Id == '{LoginId}'\r\n| project RiskDetail, RiskEventTypes, RiskLevelAggregated, RiskLevelDuringSignIn",
+                "size": 4,
+                "title": "User Risk Info",
+                "timeContextFromParameter": "timeRange",
+                "queryType": 0,
+                "resourceType": "microsoft.operationalinsights/workspaces",
+                "gridSettings": {
+                  "formatters": [
+                    {
+                      "columnMatch": "RiskLevelDuringSignIn",
+                      "formatter": 18,
+                      "formatOptions": {
+                        "thresholdsOptions": "colors",
+                        "thresholdsGrid": [
+                          {
+                            "operator": "==",
+                            "thresholdValue": "low",
+                            "representation": "blue",
+                            "text": "{0}{1}"
+                          },
+                          {
+                            "operator": "==",
+                            "thresholdValue": "medium",
+                            "representation": "yellow",
+                            "text": "{0}{1}"
+                          },
+                          {
+                            "operator": "==",
+                            "thresholdValue": "high",
+                            "representation": "redBright",
+                            "text": "{0}{1}"
+                          },
+                          {
+                            "operator": "Default",
+                            "thresholdValue": null,
+                            "text": "{0}{1}"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              },
+              "conditionalVisibilities": [
+                {
+                  "parameterName": "RiskLevelDuringSignIn",
+                  "comparison": "isNotEqualTo",
+                  "value": "none"
+                },
+                {
+                  "parameterName": "TargetCorrelationId",
+                  "comparison": "isNotEqualTo"
+                }
+              ],
+              "name": "query - 5"
+            }
+          ]
+        },
+        "name": "Signin Logs",
+        "styleSettings": {
+          "showBorder": true
+        }
+      }
+    ],
+    "styleSettings": {
+      "spacingStyle": "none"
+    },
+    "fromTemplateId": "sentinel-UserWorkbook",
+    "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+  }

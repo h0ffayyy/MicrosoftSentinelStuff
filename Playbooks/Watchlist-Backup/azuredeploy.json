@@ -1,0 +1,596 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "PlaybookName": {
+            "defaultValue": "Watchlist-Backup",
+            "type": "string",
+            "metadata": {
+                "description": "Name of the playbook (Logic Apps resources) which will be created"
+            }
+        },
+        "Workspace": {
+            "defaultValue": "",
+            "type": "string",
+            "metadata": {
+                "description": "Name of the Sentinel workspace"
+            }
+        },
+        "WorkspaceId": {
+            "defaultValue": "",
+            "type": "string",
+            "metadata": {
+                "description": "GUID of the Sentinel Log Analytics Workspace"
+            }
+        },
+        "Storage Account Name": {
+            "defaultValue": "stwatchlistbackup",
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 21,
+            "metadata": {
+                "description": "Name for the storage account used to store Sentinel Watchlist backups. Numbers and lower-case only."
+            }
+        },
+        "ClientId": {
+            "type": "string",
+            "metadata": {
+                "description": "Client ID for the AAD OAuth application used to authenticate to the Azure API"
+            }
+        },
+        "ClientSecret": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Client secret for the AAD OAuth application used to authenticate to the Azure API"
+            }
+        }
+    },
+    "variables": {
+        "AzureSentinelConnectionName": "[concat('azuresentinel-', parameters('PlaybookName'))]",
+        "BlobStorageConnectionName": "[concat('blobstorage-', parameters('PlaybookName'))]",
+        "KeyVaultConnectionName": "[concat('keyvault-', parameters('PlaybookName'))]",
+        "StorageAccountName": "[toLower(parameters('Storage Account Name'))]",
+        "KeyVaultName": "[concat('kv-', parameters('PlaybookName'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.KeyVault/vaults",
+            "apiVersion": "2022-07-01",
+            "name": "[variables('KeyVaultName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "sku": {
+                    "family": "A",
+                    "name": "Standard"
+                },
+                "tenantId": "[tenant().tenantId]",
+                "accessPolicies": [
+                    {
+                        "objectId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'full').identity.principalId]",
+                        "tenantId": "[tenant().tenantId]",
+                        "permissions": {
+                            "secrets": [
+                                "get",
+                                "list"
+                            ]
+                        }
+                    }
+                ],
+                "enabledForDeployment": false,
+                "enabledForDiskEncryption": false,
+                "enabledForTemplateDeployment": false,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 90,
+                "enableRbacAuthorization": false,
+                "vaultUri": "[concat('https://', variables('KeyVaultName'), '.vault.azure.net/')]",
+                "provisioningState": "Succeeded",
+                "publicNetworkAccess": "Enabled"
+            }
+        },
+        {
+            "type": "Microsoft.KeyVault/vaults/secrets",
+            "apiVersion": "2022-07-01",
+            "name": "[concat(variables('KeyVaultName'), '/client-secret')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', variables('KeyVaultName'))]"
+            ],
+            "properties": {
+                "value": "[parameters('ClientSecret')]"
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2022-05-01",
+            "name": "[variables('StorageAccountName')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard_RAGRS",
+                "tier": "Standard"
+            },
+            "kind": "StorageV2",
+            "properties": {
+                "dnsEndpointType": "Standard",
+                "defaultToOAuthAuthentication": false,
+                "publicNetworkAccess": "Enabled",
+                "allowCrossTenantReplication": true,
+                "minimumTlsVersion": "TLS1_2",
+                "allowBlobPublicAccess": true,
+                "allowSharedKeyAccess": true,
+                "supportsHttpsTrafficOnly": true,
+                "encryption": {
+                    "requireInfrastructureEncryption": false,
+                    "services": {
+                        "blob": {
+                            "keyType": "Account",
+                            "enabled": true
+                        }
+                    },
+                    "keySource": "Microsoft.Storage"
+                },
+                "accessTier": "Hot"
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+            "apiVersion": "2022-05-01",
+            "name": "[concat(variables('StorageAccountName'), '/default/watchlistbackups')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName'))]"
+            ],
+            "properties": {
+                "defaultEncryptionScope": "$account-encryption-key",
+                "denyEncryptionScopeOverride": false,
+                "publicAccess": "None"
+            }
+        },
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), 'ba92f5b4-2d11-453d-a403-e96b0029c9fe', resourceGroup().id)]",
+            "scope": "[concat('Microsoft.Storage/storageAccounts', '/', variables('StorageAccountName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+                "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'full').identity.principalId]"
+            }
+        },
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "name": "[guid(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '4633458b-17de-408a-b874-0445c86b69e6', resourceGroup().id)]",
+            "scope": "[concat('Microsoft.KeyVault/vaults', '/', variables('KeyVaultName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', variables('KeyVaultName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '4633458b-17de-408a-b874-0445c86b69e6')]",
+                "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'full').identity.principalId]"
+            }
+        },
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[variables('AzureSentinelConnectionName')]",
+            "location": "[resourceGroup().location]",
+            "kind": "V1",
+            "properties": {
+                "displayName": "[variables('AzureSentinelConnectionName')]",
+                "parameterValueType": "Alternative",
+                "customParameterValues": {},
+                "api": {
+                    "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2018-07-01-preview",
+            "name": "[variables('BlobStorageConnectionName')]",
+            "location": "[resourceGroup().location]",
+            "kind": "V1",
+            "properties": {
+                "displayName": "[variables('BlobStorageConnectionName')]",
+                "customParameterValues": {},
+                "api": {
+                    "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azureblob')]"
+                },
+                "parameterValueSet": {
+                    "name": "managedIdentityAuth",
+                    "values": {}
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[variables('KeyVaultConnectionName')]",
+            "location": "[resourceGroup().location]",
+            "kind": "V1",
+            "properties": {
+                "displayName": "[variables('KeyVaultConnectionName')]",
+                "customParameterValues": {},
+                "parameterValueType": "Alternative",
+                "alternativeParameterValues": {
+                    "vaultName": "[variables('KeyVaultName')]"
+                },
+                "api": {
+                    "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/keyvault')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('PlaybookName')]",
+            "location": "[resourceGroup().location]",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "dependson": [
+                "[resourceId('Microsoft.Web/connections', variables('AzureSentinelConnectionName'))]",
+                "[resourceId('Microsoft.Web/connections', variables('BlobStorageConnectionName'))]",
+                "[resourceId('Microsoft.Web/connections', variables('KeyVaultConnectionName'))]"
+            ],
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Recurrence": {
+                            "recurrence": {
+                                "frequency": "Day",
+                                "interval": 1
+                            },
+                            "evaluatedRecurrence": {
+                                "frequency": "Day",
+                                "interval": 1
+                            },
+                            "type": "Recurrence"
+                        }
+                    },
+                    "actions": {
+                        "For_each_-_response_value": {
+                            "foreach": "@body('Parse_JSON')?['value']",
+                            "actions": {
+                                "Clear_watchlist_items_variable": {
+                                    "runAfter": {
+                                        "Create_blob_(V2)": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "watchlist_items",
+                                        "value": []
+                                    }
+                                },
+                                "Create_CSV_table": {
+                                    "runAfter": {
+                                        "For_each_-_watchlist_item": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Table",
+                                    "inputs": {
+                                        "format": "CSV",
+                                        "from": "@variables('watchlist_items')"
+                                    }
+                                },
+                                "Create_blob_(V2)": {
+                                    "runAfter": {
+                                        "Create_CSV_table": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "body": "@body('Create_CSV_table')",
+                                        "headers": {
+                                            "ReadFileMetadataFromServer": true
+                                        },
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "path": "[concat('/v2/datasets/@{encodeURIComponent(encodeURIComponent(''', variables('StorageAccountName'), '''))}/files')]",
+                                        "queries": {
+                                            "folderPath": "/watchlistbackups",
+                                            "name": "@{items('For_each_-_response_value')?['name']}_watchlist_backup_@{utcNow()}.csv",
+                                            "queryParametersSingleEncoded": true
+                                        }
+                                    },
+                                    "runtimeConfiguration": {
+                                        "contentTransfer": {
+                                            "transferMode": "Chunked"
+                                        }
+                                    }
+                                },
+                                "For_each_-_watchlist_item": {
+                                    "foreach": "@body('Watchlists_-_Get_all_watchlist_Items_for_a_given_watchlist')['properties']?['watchlistItems']",
+                                    "actions": {
+                                        "Append_to_array_variable": {
+                                            "runAfter": {},
+                                            "type": "AppendToArrayVariable",
+                                            "inputs": {
+                                                "name": "watchlist_items",
+                                                "value": "@items('For_each_-_watchlist_item')['properties.itemsKeyValue']"
+                                            }
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "Watchlists_-_Get_all_watchlist_Items_for_a_given_watchlist": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Foreach"
+                                },
+                                "Watchlists_-_Get_all_watchlist_Items_for_a_given_watchlist": {
+                                    "runAfter": {},
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                            }
+                                        },
+                                        "method": "get",
+                                        "path": "[concat('/Watchlists/subscriptions/@{encodeURIComponent(''', subscription().subscriptionId,''')}/resourceGroups/@{encodeURIComponent(''', resourceGroup().name,''')}/workspaces/@{encodeURIComponent(''', parameters('WorkspaceId'),''')}/watchlists/@{encodeURIComponent(items(''For_each_-_response_value'')?[''properties'']?[''watchlistAlias''])}/watchlistItems')]"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Parse_JSON": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        },
+                        "Get_secret": {
+                            "runAfter": {
+                                "Initialize_variable": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['keyvault']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/secrets/@{encodeURIComponent('client-secret')}/value"
+                            }
+                        },
+                        "HTTP": {
+                            "runAfter": {
+                                "Get_secret": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "authentication": {
+                                    "audience": "https://management.azure.com/",
+                                    "authority": "https://login.microsoft.com",
+                                    "clientId": "[parameters('ClientId')]",
+                                    "secret": "[parameters('ClientSecret')]",
+                                    "tenant": "[tenant().tenantId]",
+                                    "type": "ActiveDirectoryOAuth"
+                                },
+                                "method": "GET",
+                                "uri": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', resourceGroup().name, '/providers/Microsoft.OperationalInsights/workspaces/', parameters('Workspace'), '/providers/Microsoft.SecurityInsights/watchlists?api-version=2021-10-01')]"
+                            }
+                        },
+                        "Initialize_variable": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "watchlist_items",
+                                        "type": "array"
+                                    }
+                                ]
+                            }
+                        },
+                        "Parse_JSON": {
+                            "runAfter": {
+                                "HTTP": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ParseJson",
+                            "inputs": {
+                                "content": "@body('HTTP')",
+                                "schema": {
+                                    "properties": {
+                                        "value": {
+                                            "items": {
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string"
+                                                    },
+                                                    "name": {
+                                                        "type": "string"
+                                                    },
+                                                    "properties": {
+                                                        "properties": {
+                                                            "created": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdBy": {
+                                                                "properties": {
+                                                                    "email": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "objectId": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "type": "object"
+                                                            },
+                                                            "defaultDuration": {
+                                                                "type": "string"
+                                                            },
+                                                            "description": {
+                                                                "type": "string"
+                                                            },
+                                                            "displayName": {
+                                                                "type": "string"
+                                                            },
+                                                            "isDeleted": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "itemsSearchKey": {
+                                                                "type": "string"
+                                                            },
+                                                            "labels": {
+                                                                "type": "array"
+                                                            },
+                                                            "numberOfLinesToSkip": {
+                                                                "type": "integer"
+                                                            },
+                                                            "provider": {
+                                                                "type": "string"
+                                                            },
+                                                            "source": {
+                                                                "type": "string"
+                                                            },
+                                                            "tenantId": {
+                                                                "type": "string"
+                                                            },
+                                                            "updated": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedBy": {
+                                                                "properties": {
+                                                                    "email": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "objectId": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "type": "object"
+                                                            },
+                                                            "uploadStatus": {
+                                                                "type": "string"
+                                                            },
+                                                            "watchlistAlias": {
+                                                                "type": "string"
+                                                            },
+                                                            "watchlistId": {
+                                                                "type": "string"
+                                                            },
+                                                            "watchlistType": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "type": "object"
+                                                    },
+                                                    "systemData": {
+                                                        "properties": {
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdBy": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdByType": {
+                                                                "type": "string"
+                                                            },
+                                                            "lastModifiedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "lastModifiedBy": {
+                                                                "type": "string"
+                                                            },
+                                                            "lastModifiedByType": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "type": "object"
+                                                    },
+                                                    "type": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "name",
+                                                    "type",
+                                                    "systemData",
+                                                    "properties"
+                                                ],
+                                                "type": "object"
+                                            },
+                                            "type": "array"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azureblob": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('BlobStorageConnectionName'))]",
+                                "connectionName": "azureblob-1",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                },
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azureblob')]"
+                            },
+                            "azuresentinel": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('AzureSentinelConnectionName'))]",
+                                "connectionName": "azuresentinel",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                },
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]"
+                            },
+                            "keyvault": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('KeyVaultConnectionName'))]",
+                                "connectionName": "[variables('KeyVaultName')]",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                },
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/keyvault')]"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

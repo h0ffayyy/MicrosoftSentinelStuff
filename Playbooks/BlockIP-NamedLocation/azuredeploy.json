@@ -1,0 +1,348 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "Playbook Name": {
+            "defaultValue": "BlockIP-NamedLocation",
+            "type": "String"
+        },
+        "Named Location ID": {
+            "defaultValue": "",
+            "type": "String",
+            "metadata": {
+                "description": "The GUID of the IP address named location"
+            }
+        }
+    },
+    "variables": {
+        "AzureSentinelConnectionName": "[concat('azuresentinel-', parameters('Playbook Name'))]",
+        "KeyVaultName": "[concat('kv-', parameters('Playbook Name'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[variables('AzureSentinelConnectionName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "displayName": "[variables('AzureSentinelConnectionName')]",
+                "customParameterValues": {},
+                "api": {
+                    "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('Playbook Name')]",
+            "location": "eastus",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/connections', variables('AzureSentinelConnectionName'))]"
+            ],
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        },
+                        "namedLocation": {
+                            "defaultValue": "[parameters('Named Location ID')]",
+                            "type": "String"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Append_to_string_variable": {
+                            "runAfter": {
+                                "For_each_3": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "AppendToStringVariable",
+                            "inputs": {
+                                "name": "body",
+                                "value": "],\n\"isTrusted\": false\n}"
+                            }
+                        },
+                        "Compose": {
+                            "runAfter": {
+                                "Append_to_string_variable": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@variables('body')"
+                        },
+                        "Condition": {
+                            "actions": {
+                                "Terminate": {
+                                    "runAfter": {},
+                                    "type": "Terminate",
+                                    "inputs": {
+                                        "runError": {
+                                            "message": "Named location has max number of IPs!"
+                                        },
+                                        "runStatus": "Failed"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Parse_JSON": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "greaterOrEquals": [
+                                            "@length(body('Parse_JSON')?['ipRanges'])",
+                                            2000
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "Entities_-_Get_IPs": {
+                            "runAfter": {},
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": "@triggerBody()?['object']?['properties']?['relatedEntities']",
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/entities/ip"
+                            }
+                        },
+                        "For_each_2": {
+                            "foreach": "@body('Parse_JSON')?['ipRanges']",
+                            "actions": {
+                                "Append_existing_IPs": {
+                                    "runAfter": {},
+                                    "type": "AppendToStringVariable",
+                                    "inputs": {
+                                        "name": "body",
+                                        "value": "    {\n      \"@odata.type\": \"#microsoft.graph.iPv4CidrRange\",\n      \"cidrAddress\": \"@{items('For_each_2')?['cidrAddress']}\"\n    },"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Initialize_variable": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        },
+                        "For_each_3": {
+                            "foreach": "@body('Entities_-_Get_IPs')?['IPs']",
+                            "actions": {
+                                "Append_new_IPs": {
+                                    "runAfter": {},
+                                    "type": "AppendToStringVariable",
+                                    "inputs": {
+                                        "name": "body",
+                                        "value": "    {\n      \"@odata.type\": \"#microsoft.graph.iPv4CidrRange\",\n      \"cidrAddress\": \"@{items('For_each_3')?['Address']}/32\"\n    },"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "For_each_2": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        },
+                        "GET_existing_list": {
+                            "runAfter": {
+                                "Entities_-_Get_IPs": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "method": "GET",
+                                "uri": "https://graph.microsoft.com/v1.0/identity/conditionalAccess/namedLocations/@{parameters('namedLocation')}"
+                            }
+                        },
+                        "Initialize_variable": {
+                            "runAfter": {
+                                "Condition": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "body",
+                                        "type": "string",
+                                        "value": "{\n  \"@odata.type\": \"#microsoft.graph.ipNamedLocation\",\n  \"ipRanges\": ["
+                                    }
+                                ]
+                            }
+                        },
+                        "PATCH_existing_list": {
+                            "runAfter": {
+                                "Compose": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "body": "@variables('body')",
+                                "headers": {
+                                    "Content-type": "application/json"
+                                },
+                                "method": "PATCH",
+                                "uri": "https://graph.microsoft.com/v1.0/identity/conditionalAccess/namedLocations/@{parameters('namedLocation')}"
+                            }
+                        },
+                        "Parse_JSON": {
+                            "runAfter": {
+                                "GET_existing_list": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ParseJson",
+                            "inputs": {
+                                "content": "@body('GET_existing_list')",
+                                "schema": {
+                                    "properties": {
+                                        "@@odata.context": {
+                                            "type": "string"
+                                        },
+                                        "@@odata.type": {
+                                            "type": "string"
+                                        },
+                                        "createdDateTime": {
+                                            "type": "string"
+                                        },
+                                        "displayName": {
+                                            "type": "string"
+                                        },
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "ipRanges": {
+                                            "items": {
+                                                "properties": {
+                                                    "@@odata.type": {
+                                                        "type": "string"
+                                                    },
+                                                    "cidrAddress": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "@@odata.type",
+                                                    "cidrAddress"
+                                                ],
+                                                "type": "object"
+                                            },
+                                            "type": "array"
+                                        },
+                                        "isTrusted": {
+                                            "type": "boolean"
+                                        },
+                                        "modifiedDateTime": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('AzureSentinelConnectionName'))]",
+                                "connectionName": "[variables('AzureSentinelConnectionName')]",
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "type": "Microsoft.KeyVault/vaults",
+            "apiVersion": "2022-07-01",
+            "name": "[variables('KeyVaultName')]",
+            "location": "eastus",
+            "dependsOn": [
+                "[resourceId('Microsoft.Logic/workflows', parameters('Playbook Name'))]"
+            ],
+            "properties": {
+                "sku": {
+                    "family": "A",
+                    "name": "Standard"
+                },
+                "tenantId": "[tenant().tenantId]",
+                "accessPolicies": [
+                    {
+                        "tenantId": "[tenant().tenantId]",
+                        "objectId": "ba48e4dd-2ac1-4700-905f-53310be5bc5b",
+                        "permissions": {
+                            "certificates": [],
+                            "keys": [],
+                            "secrets": [
+                                "get",
+                                "list"
+                            ]
+                        }
+                    }
+                ],
+                "enabledForDeployment": false,
+                "enabledForDiskEncryption": false,
+                "enabledForTemplateDeployment": false,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 90,
+                "enableRbacAuthorization": false,
+                "vaultUri": "[concat('https://', variables('KeyVaultName'), '.vault.azure.net/')]",
+                "provisioningState": "Succeeded",
+                "publicNetworkAccess": "Enabled"
+            }
+        },
+        {
+            "type": "Microsoft.KeyVault/vaults/secrets",
+            "apiVersion": "2022-07-01",
+            "name": "[concat(variables('KeyVaultName'), '/clientsecret')]",
+            "location": "eastus",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', variables('KeyVaultName'))]"
+            ],
+            "properties": {
+                "attributes": {
+                    "enabled": true
+                }
+            }
+        }
+    ]
+}
