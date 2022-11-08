@@ -9,6 +9,22 @@
                 "description": "Name of the playbook (Logic Apps resources) which will be created"
             }
         },
+        "Storage Account Name": {
+            "defaultValue": "",
+            "type": "string",
+            "maxLength": 24,
+            "metadata": {
+                "description": "Name for the storage account used to store Sentinel Watchlist backups. Numbers and lower-case only, must be globally unique"
+            }
+        },
+        "Key Vault Name": {
+            "defaultValue": "",
+            "type": "string",
+            "maxLength": 24,
+            "metadata": {
+                "description": "Name for the Key Vault used to store the app registration client secret. Alphanumeric and hyphens (dashes) only, must be globally unique"
+            }
+        },
         "Workspace": {
             "defaultValue": "",
             "type": "string",
@@ -23,15 +39,7 @@
                 "description": "GUID of the Sentinel Log Analytics Workspace"
             }
         },
-        "Storage Account Name": {
-            "defaultValue": "stwatchlistbackup",
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 21,
-            "metadata": {
-                "description": "Name for the storage account used to store Sentinel Watchlist backups. Numbers and lower-case only."
-            }
-        },
+
         "ClientId": {
             "type": "string",
             "metadata": {
@@ -49,14 +57,13 @@
         "AzureSentinelConnectionName": "[concat('azuresentinel-', parameters('PlaybookName'))]",
         "BlobStorageConnectionName": "[concat('blobstorage-', parameters('PlaybookName'))]",
         "KeyVaultConnectionName": "[concat('keyvault-', parameters('PlaybookName'))]",
-        "StorageAccountName": "[toLower(parameters('Storage Account Name'))]",
-        "KeyVaultName": "[concat('kv-', parameters('PlaybookName'))]"
+        "StorageAccountName": "[toLower(parameters('Storage Account Name'))]"
     },
     "resources": [
         {
             "type": "Microsoft.KeyVault/vaults",
             "apiVersion": "2022-07-01",
-            "name": "[variables('KeyVaultName')]",
+            "name": "[parameters('Key Vault Name')]",
             "location": "[resourceGroup().location]",
             "properties": {
                 "sku": {
@@ -82,7 +89,7 @@
                 "enableSoftDelete": true,
                 "softDeleteRetentionInDays": 90,
                 "enableRbacAuthorization": false,
-                "vaultUri": "[concat('https://', variables('KeyVaultName'), '.vault.azure.net/')]",
+                "vaultUri": "[concat('https://', parameters('Key Vault Name'), '.vault.azure.net/')]",
                 "provisioningState": "Succeeded",
                 "publicNetworkAccess": "Enabled"
             }
@@ -90,10 +97,10 @@
         {
             "type": "Microsoft.KeyVault/vaults/secrets",
             "apiVersion": "2022-07-01",
-            "name": "[concat(variables('KeyVaultName'), '/client-secret')]",
+            "name": "[concat(parameters('Key Vault Name'), '/client-secret')]",
             "location": "[resourceGroup().location]",
             "dependsOn": [
-                "[resourceId('Microsoft.KeyVault/vaults', variables('KeyVaultName'))]"
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('Key Vault Name'))]"
             ],
             "properties": {
                 "value": "[parameters('ClientSecret')]"
@@ -151,24 +158,28 @@
             "name": "[guid(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), 'ba92f5b4-2d11-453d-a403-e96b0029c9fe', resourceGroup().id)]",
             "scope": "[concat('Microsoft.Storage/storageAccounts', '/', variables('StorageAccountName'))]",
             "dependsOn": [
-                "[resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName'))]"
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName'))]",
+                "[resourceId('Microsoft.Logic/workflows', parameters('PlaybookName'))]"
             ],
             "properties": {
                 "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
-                "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'full').identity.principalId]"
+                "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
             }
         },
         {
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
             "name": "[guid(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '4633458b-17de-408a-b874-0445c86b69e6', resourceGroup().id)]",
-            "scope": "[concat('Microsoft.KeyVault/vaults', '/', variables('KeyVaultName'))]",
+            "scope": "[concat('Microsoft.KeyVault/vaults', '/', parameters('Key Vault Name'))]",
             "dependsOn": [
-                "[resourceId('Microsoft.KeyVault/vaults', variables('KeyVaultName'))]"
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('Key Vault Name'))]",
+                "[resourceId('Microsoft.Logic/workflows', parameters('PlaybookName'))]"
             ],
             "properties": {
                 "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '4633458b-17de-408a-b874-0445c86b69e6')]",
-                "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'full').identity.principalId]"
+                "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
             }
         },
         {
@@ -215,7 +226,7 @@
                 "customParameterValues": {},
                 "parameterValueType": "Alternative",
                 "alternativeParameterValues": {
-                    "vaultName": "[variables('KeyVaultName')]"
+                    "vaultName": "[parameters('Key Vault Name')]"
                 },
                 "api": {
                     "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/keyvault')]"
@@ -579,7 +590,7 @@
                             },
                             "keyvault": {
                                 "connectionId": "[resourceId('Microsoft.Web/connections', variables('KeyVaultConnectionName'))]",
-                                "connectionName": "[variables('KeyVaultName')]",
+                                "connectionName": "[parameters('Key Vault Name')]",
                                 "connectionProperties": {
                                     "authentication": {
                                         "type": "ManagedServiceIdentity"
