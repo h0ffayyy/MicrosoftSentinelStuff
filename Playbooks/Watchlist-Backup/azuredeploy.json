@@ -185,12 +185,12 @@
         {
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            "name": "[guid(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '3e150937-b8fe-4cfb-8069-0eaf05ecd056', resourceGroup().id)]",
+            "name": "[guid(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '8d289c81-5878-46d4-8554-54e1e3d8b5cb', resourceGroup().id)]",
             "dependsOn": [
                 "[resourceId('Microsoft.Logic/workflows', parameters('PlaybookName'))]"
             ],
             "properties": {
-                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '3e150937-b8fe-4cfb-8069-0eaf05ecd056')]",
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '8d289c81-5878-46d4-8554-54e1e3d8b5cb')]",
                 "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'full').identity.principalId]",
                 "principalType": "ServicePrincipal"
             }

@@ -18,7 +18,7 @@ The ARM template deploys the following resources:
 
 The template will also assign the following roles:
 
-* The logic app managed identity will be assigned Sentinel Responder role a the 
+* The logic app managed identity will be assigned Sentinel Reader role a the 
 resource group level
 * The logic app managed identity will be assigned Storage Blob Data Contributor 
 at the resource level
