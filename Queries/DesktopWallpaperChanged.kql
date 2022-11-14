@@ -1,0 +1,6 @@
+// look for registry changes to the users desktop wallpaper
+DeviceRegistryEvents
+| where ActionType == "RegistryValueSet"
+| where RegistryValueName == "Wallpaper"
+| where RegistryKey contains "HKEY_CURRENT_USER" and RegistryKey contains "Control Panel\\Desktop"
+| project TimeGenerated, DeviceId, DeviceName,PreviousRegistryValueData, NewRegistryValueData=RegistryValueData, InitiatingProcessAccountName, InitiatingProcessCommandLine, InitiatingProcessId, InitiatingProcessParentFileName
