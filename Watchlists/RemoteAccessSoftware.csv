@@ -9,7 +9,8 @@ Cservice, AnyViewer
 atera_agent, Atera
 bomgar-scc, BeyondTrust (Bomgar)
 bomgar-rdp, BeyondTrust (Bomgar)
-screenconnect, ConnectWise Control
+screenconnect.clientservice, ConnectWise Control
+screenconnect.windowsclient, ConnectWise Control
 dwrcs, Dameware
 distant-desktop, Distant Desktop
 dwagsvc, DW Service
