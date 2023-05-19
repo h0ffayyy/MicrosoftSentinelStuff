@@ -1,0 +1,239 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "playbookName": {
+            "defaultValue": "UpdateIncident-AddTLPBanner",
+            "type": "String"
+        }
+    },
+    "variables": {
+        "AzureSentinelConnectionName": "[concat('azuresentinel-', parameters('PlaybookName'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[variables('AzureSentinelConnectionName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "displayName": "[variables('AzureSentinelConnectionName')]",
+                "customParameterValues": {},
+                "api": {
+                    "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('playbookName')]",
+            "location": "[resourceGroup().location]",
+            "dependson": [
+                "[resourceId('Microsoft.Web/connections', variables('AzureSentinelConnectionName'))]"
+            ],
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "For_each": {
+                            "foreach": "@triggerBody()?['object']?['properties']?['labels']",
+                            "actions": {
+                                "Switch": {
+                                    "runAfter": {},
+                                    "cases": {
+                                        "Case_TLP_AMBER": {
+                                            "case": "TLP: AMBER",
+                                            "actions": {
+                                                "Compose_TLP_AMBER": {
+                                                    "runAfter": {},
+                                                    "type": "Compose",
+                                                    "inputs": "<div style=\"background-color: #ffcc00;border-left: 6px solid #cca300;\"><p style=\"padding-left: 5px\"><strong>TLP: AMBER</strong> </p></div><p>Limited disclosure, restricted to participants’ organization and its clients</p>"
+                                                },
+                                                "Set_variable 4": {
+                                                    "runAfter": {
+                                                        "Compose_TLP_AMBER": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "SetVariable",
+                                                    "inputs": {
+                                                        "name": "new description",
+                                                        "value": "@{outputs('Compose_TLP_AMBER')}@{variables('original_description')}"
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "Case_TLP_CLEAR": {
+                                            "case": "TLP: CLEAR",
+                                            "actions": {
+                                                "Compose_TLP_CLEAR": {
+                                                    "runAfter": {},
+                                                    "type": "Compose",
+                                                    "inputs": "<div style=\"background-color: #f2f2f2;border-left: 6px solid #a6a6a6;\"><p style=\"padding-left: 5px\"><strong>TLP: CLEAR</strong> </p></div><p>Disclosure is not limited.</p>"
+                                                },
+                                                "Set_variable 3": {
+                                                    "runAfter": {
+                                                        "Compose_TLP_CLEAR": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "SetVariable",
+                                                    "inputs": {
+                                                        "name": "new description",
+                                                        "value": "@{outputs('Compose_TLP_CLEAR')}@{variables('original_description')}"
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "Case_TLP_GREEN": {
+                                            "case": "TLP: GREEN",
+                                            "actions": {
+                                                "Compose_TLP_GREEN": {
+                                                    "runAfter": {},
+                                                    "type": "Compose",
+                                                    "inputs": "<div style=\"background-color: #ddffdd;border-left: 6px solid #04AA6D;\"><p style=\"padding-left: 5px\"><strong>TLP: GREEN</strong> </p></div><p>Limited disclosure, restricted to the community.</p>"
+                                                },
+                                                "Set_variable 2": {
+                                                    "runAfter": {
+                                                        "Compose_TLP_GREEN": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "SetVariable",
+                                                    "inputs": {
+                                                        "name": "new description",
+                                                        "value": "@{outputs('Compose_TLP_GREEN')}@{variables('original_description')}"
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "Case_TLP_RED": {
+                                            "case": "TLP: RED",
+                                            "actions": {
+                                                "Compose_TLP_RED": {
+                                                    "runAfter": {},
+                                                    "type": "Compose",
+                                                    "inputs": "<div style=\"background-color: #ffdddd;border-left: 6px solid #f44336;\"><p style=\"padding-left: 5px\"><strong>TLP: RED</strong> </p></div><p>Not for disclosure, restricted to participants only.</p>"
+                                                },
+                                                "Set_variable": {
+                                                    "runAfter": {
+                                                        "Compose_TLP_RED": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "SetVariable",
+                                                    "inputs": {
+                                                        "name": "new description",
+                                                        "value": "@{outputs('Compose_TLP_RED')}@{variables('original_description')}"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "default": {
+                                        "actions": {}
+                                    },
+                                    "expression": "@items('For_Each')?['labelName']",
+                                    "type": "Switch"
+                                }
+                            },
+                            "runAfter": {
+                                "Initialize_variable_-_new_description": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        },
+                        "Initialize_variable_-_new_description": {
+                            "runAfter": {
+                                "Initialize_variable_-_original_description": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "new description",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        },
+                        "Initialize_variable_-_original_description": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "original_description",
+                                        "type": "string",
+                                        "value": "@triggerBody()?['object']?['properties']?['description']"
+                                    }
+                                ]
+                            }
+                        },
+                        "Update_incident": {
+                            "runAfter": {
+                                "For_each": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": {
+                                    "description": "@variables('new description')",
+                                    "incidentArmId": "@triggerBody()?['object']?['id']"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "method": "put",
+                                "path": "/Incidents"
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('AzureSentinelConnectionName'))]",
+                                "connectionName": "azuresentinel",
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
